@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Similarity Search</title>
+<style>
+  :root {
+    --ink: #111111;
+    --muted: #666666;
+    --line: #e5e5e5;
+    --bg: #f6f6f6;
+    --ok: #0b7a3b;
+    --warn: #b45309;
+    --err: #b91c1c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--line);
+    background: #ffffff;
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  #db-status { font-size: 13px; color: var(--muted); }
+  main {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1fr 1.15fr;
+    gap: 24px;
+    align-items: start;
+  }
+  .card {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .card h2 { margin: 0 0 4px; font-size: 16px; }
+  .card .desc { color: var(--muted); font-size: 13px; margin: 0 0 14px; line-height: 1.4; }
+  .dropzone {
+    border: 1.5px dashed #c9c9c9;
+    border-radius: 8px;
+    padding: 20px 12px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    background: #ffffff;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .dropzone:hover, .dropzone.active { border-color: var(--ink); }
+  .hidden { display: none; }
+  .picked { margin-top: 10px; font-size: 12px; color: var(--muted); word-break: break-all; }
+  button.action {
+    background: var(--ink);
+    color: #ffffff;
+    border: 0;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    margin-top: 12px;
+  }
+  button.action:disabled { opacity: .45; cursor: not-allowed; }
+  .row-controls { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+  .row-controls label { font-size: 13px; color: var(--muted); }
+  select.topk {
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid #cccccc;
+    background: #ffffff;
+    font-size: 14px;
+  }
+  .row-controls button.action { margin-top: 0; }
+  .status { margin-top: 12px; font-size: 13px; color: var(--muted); white-space: pre-wrap; }
+  .status.ok { color: var(--ok); }
+  .status.warn { color: var(--warn); }
+  .status.err { color: var(--err); }
+  .thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .thumbs img {
+    width: 64px; height: 64px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .result-card {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #ffffff;
+  }
+  .imgwrap { height: 150px; background: #ececec; display: flex; align-items: center; justify-content: center; }
+  .imgwrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .imgwrap .placeholder { padding: 10px; font-size: 12px; color: var(--muted); text-align: center; }
+  .meta { padding: 8px; font-size: 12px; }
+  .meta .rank { font-weight: 600; margin-bottom: 3px; }
+  .meta .rank .score { color: var(--ok); font-weight: 600; }
+  .meta .src, .meta .fname { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* --- Similarity Bar --- */
+  .similarity-bar-wrap {
+    margin-top: 8px;
+    margin-bottom: 4px;
+    width: 100%;
+    height: 8px;
+    background: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  .similarity-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.4s ease;
+  }
+  .similarity-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .query-preview {
+    margin-top: 10px;
+    text-align: center;
+  }
+  .query-preview img {
+    max-width: 120px;
+    max-height: 120px;
+    border-radius: 8px;
+    border: 2px solid var(--ink);
+    object-fit: contain;
+  }
+  .query-preview .label {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  @media (max-width: 780px) {
+    main { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+  <header>
+    <h1>Face Similarity Search</h1>
+    <div id="db-status">Checking database…</div>
+  </header>
+
+  <main>
+    <!-- ============ Card 1: Create Embeddings (Ingest) ============ -->
+    <section class="card">
+      <h2>1 · Create embeddings</h2>
+      <p class="desc">
+        Upload one or more face images. Each is embedded and added to the
+        database so later similarity searches can find it.
+      </p>
+
+      <div class="dropzone" id="ingest-drop">
+        Click to choose images…<br>(multiple files allowed)
+      </div>
+      <input type="file" id="ingest-input" accept="image/*" multiple class="hidden">
+
+      <div class="picked" id="ingest-picked"></div>
+
+      <button class="action" id="ingest-btn" disabled>Upload &amp; Create Embeddings</button>
+      <div class="status" id="ingest-status"></div>
+      <div class="thumbs" id="ingest-thumbs"></div>
+    </section>
+
+    <!-- ============ Card 2: Similarity Search ============ -->
+    <section class="card">
+      <h2>2 · Similarity search</h2>
+      <p class="desc">
+        Upload one query face. The top-K most similar indexed images are
+        returned and shown below with their similarity scores.
+      </p>
+
+      <div class="dropzone" id="search-drop">Click to choose a query image…</div>
+      <input type="file" id="search-input" accept="image/*" class="hidden">
+
+      <div class="picked" id="search-picked"></div>
+      <div class="query-preview" id="query-preview"></div>
+
+      <div class="row-controls">
+        <label for="topk">Top-K</label>
+        <select id="topk" class="topk">
+          <option value="5" selected>5</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+        </select>
+        <button class="action" id="search-btn" disabled>Search</button>
+      </div>
+
+      <div class="status" id="search-status"></div>
+      <div class="grid" id="results"></div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
